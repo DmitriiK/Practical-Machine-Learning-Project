@@ -1,0 +1,136 @@
+---
+title: "Practical Machine Learning Project"
+author: "Dmitrii Krasheninnikov"
+date: "Sunday, February 22, 2015"
+output: html_document
+---
+
+##The task:
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+In the data sets there is data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+The goal of our project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+
+
+##Executive summary:
+
+First we prepared the data: deleted NA columns as well as the irrelevant variables such as Name, Timestamp, Number of the measurement and several others.
+Then using Random Forest algorithm we reached the great prediction accuracy of about 99.22%. As we used Random Forest, cross validation was not needed to properly estimate out of sample error. Having reached such good accuracy we decided that other models will unlikely perform significantly better, and thus did nou use any other models.
+
+##The code:
+
+```{r,message=FALSE,warning=FALSE}
+#Clear Workspace
+rm(list = ls())
+library(caret)
+library(randomForest)
+
+#Set seed for reproducibility of results as well as working directory
+set.seed(1)
+setwd("C:/Users/Dimas/Documents/R/PracticalML/")
+
+#Read data
+RawData <- read.csv(file = "C:/Users/Dimas/Documents/R/PracticalML/pml-training.csv")
+CourseRawData <- read.csv(file = "C:/Users/Dimas/Documents/R/PracticalML/pml-testing.csv")
+
+
+```
+####Data preparation:
+
+```{r,message=FALSE,warning=FALSE}
+#Drop all columns with over 95% NAs, in Course Test set AND in the main data
+
+#Finding over 95% NA columns in training data
+m = dim(RawData)[1]; n = dim(RawData)[2];
+colNArate = NULL
+for (i in 1:n ) {
+        colNArate[i] = sum(is.na(RawData[,i]))/m
+}
+colNArate = (((colNArate<0.95)*1)* (1:160))
+colNArate = colNArate[colNArate!=0]
+
+#Finding over 95% NA columns in Course test data
+m = dim(CourseRawData)[1]; n = dim(CourseRawData)[2];
+colNArate1 = NULL
+for (i in 1:n ) {
+        colNArate1[i] = sum(is.na(CourseRawData[,i]))/m
+}
+colNArate1 = (((colNArate1<0.95)*1)* (1:160))
+colNArate1 = colNArate1[colNArate1!=0]
+
+#Intersection of not-NA cols in training and test data
+colNArate = intersect(colNArate, colNArate1)
+
+
+#If we check the data set's description, we can easily understand 
+#that first seven variables are completely irrelevant for prediction.
+#So we will drop them in both data sets..
+
+data <- RawData[, colNArate]
+data <- data[,-seq(1:7)]
+CourseData <- CourseRawData[,colNArate]
+CourseData <- CourseData[,-seq(1:7)]
+
+#Let's partition our data into training and test sets
+inTrain = createDataPartition(data$classe, p = 0.55)[[1]]
+training <- data[inTrain,]
+testing <- data[-inTrain,]
+
+CourseData$magnet_dumbbell_z = as.numeric(CourseData$magnet_dumbbell_z)
+CourseData$magnet_forearm_y = as.numeric(CourseData$magnet_forearm_y)
+CourseData$magnet_forearm_z = as.numeric(CourseData$magnet_forearm_z)
+
+levels(CourseData$cvtd_timestamp) = levels(data$cvtd_timestamp)
+levels(CourseData$new_window) = levels(data$new_window)
+```
+
+Now we have only 53 variables left in our data set including the outcome, *classe*
+
+```{r,message=FALSE,warning=FALSE}
+dim(data)[2]
+```
+
+####Fitting the model with Random Forest:
+
+```{r,message=FALSE,warning=FALSE}
+#If we have the model saved, load it, else fit and save
+if(file.exists("fit.rda")) {
+        ## load model
+        load("fit.rda")
+} else {
+        ## (re)fit the model
+        fit <- randomForest(training$classe~., prox = TRUE, data = training[,-53])
+        save(fit, file = "fit.rda")
+}
+```
+Checking the accuracy of our model on the test dataset. The performance is amazing: the out-of-sample error is less than 1%.
+
+```{r,message=FALSE,warning=FALSE}
+prediction <- predict(fit, newdata = testing[,-53])
+confusionMatrix(testing$classe, prediction)
+```
+Quote from https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr :
+
+####The out-of-bag (oob) error estimate
+
+"In random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error. It is estimated internally, during the run, as follows:
+
+Each tree is constructed using a different bootstrap sample from the original data. About one-third of the cases are left out of the bootstrap sample and not used in the construction of the kth tree.
+
+Put each case left out in the construction of the kth tree down the kth tree to get a classification. In this way, a test set classification is obtained for each case in about one-third of the trees. At the end of the run, take j to be the class that got most of the votes every time case n was oob. The proportion of times that j is not equal to the true class of n averaged over all cases is the oob error estimate. This has proven to be unbiased in many tests."
+
+As we can see, we **do not even need cross validation or test sets** in order to properly estimate out of sample error with random forest. Instead, we can simply do it like this:
+
+```{r,message=FALSE,warning=FALSE}
+fit
+```
+As we can see, the OOB estimate of error rate is **0.78%**. This is really good, and once again, as we used Random Forest, we did not even need to use cross validation to estimate it. 
+I do not expect that any other models will perform *significantly* better than this, and thus I will not train any other models.
+
+Now let's predict what we have to for the course submission task:
+
+```{r,message=FALSE,warning=FALSE}
+
+CoursePrediction <- as.character(predict(fit, newdata = CourseData[,-53]))
+CoursePrediction
+```
